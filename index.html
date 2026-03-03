@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PMR Setup Engineer - Pro Version</title>
+    <title>PMR Setup Engineer - Pro</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;600;700&family=Roboto:wght@300;400;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -29,60 +31,40 @@
         }
     </script>
     <style>
-        body { background-color: #0f0f12; color: white; font-family: 'Roboto', sans-serif; }
+        body { background-color: #0f0f12; color: white; font-family: 'Roboto', sans-serif; margin: 0; }
         .racing-card { background: linear-gradient(145deg, #1a1a1e 0%, #121216 100%); border: 1px solid rgba(255,255,255,0.05); }
-        .custom-scroll::-webkit-scrollbar { width: 6px; }
-        .custom-scroll::-webkit-scrollbar-track { background: #0f0f12; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
-        @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .animate-pulse-red { animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .animate-pulse-red { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        /* Nascondi il root finché React non è pronto per evitare flash bianchi */
+        #root:empty { display: none; }
     </style>
 </head>
-<body class="custom-scroll">
+<body>
     <div id="root"></div>
 
-    <!-- Librerie esterne -->
+    <!-- Caricamento Librerie in ordine corretto -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- SDK Gemini per Browser -->
-    <script type="importmap">
-    {
-      "imports": {
-        "@google/genai": "https://esm.run/@google/genai"
-      }
-    }
-    </script>
-
+    <!-- Script principale -->
     <script type="text/babel">
-        import { GoogleGenAI } from "@google/genai";
+        // Definiamo i componenti fuori per chiarezza
         const { useState, useEffect } = React;
 
-        // --- Componenti UI ---
-
         const App = () => {
-            const [apiKey, setApiKey] = useState(localStorage.getItem('pmr_gemini_key') || '');
+            const [apiKey, setApiKey] = useState(localStorage.getItem('pmr_key') || '');
             const [showSettings, setShowSettings] = useState(!apiKey);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState(null);
             const [setup, setSetup] = useState(null);
             
-            // Form States
-            const [carClass, setCarClass] = useState('GT3');
             const [carModel, setCarModel] = useState('');
             const [track, setTrack] = useState('');
-            const [device, setDevice] = useState('Volante (DD)');
+            const [device, setDevice] = useState('Volante (Direct Drive)');
 
-            const saveKey = (e) => {
-                e.preventDefault();
-                const key = e.target.key.value;
-                localStorage.setItem('pmr_gemini_key', key);
-                setApiKey(key);
-                setShowSettings(false);
-            };
-
-            const generateSetup = async (e) => {
+            // Funzione per generare il setup
+            const handleGenerate = async (e) => {
                 e.preventDefault();
                 if (!apiKey) { setShowSettings(true); return; }
                 
@@ -90,204 +72,149 @@
                 setError(null);
                 
                 try {
-                    const genAI = new GoogleGenAI({ apiKey });
+                    // Carichiamo l'SDK dinamicamente per evitare errori di caricamento iniziale
+                    const { GoogleGenAI } = await import('https://esm.run/@google/genai');
+                    const genAI = new GoogleGenAI(apiKey);
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-                    const prompt = `Sei un ingegnere di pista esperto per Project Motor Racing. 
-                    Genera un setup professionale per:
-                    Auto: ${carModel} (Classe ${carClass})
-                    Circuito: ${track}
-                    Periferica: ${device}
-                    
-                    Rispondi ESCLUSIVAMENTE in formato JSON con questa struttura:
-                    {
-                      "overview": "breve spiegazione della filosofia del setup",
-                      "tyres": {"pressure": "valore", "camber": "valore"},
-                      "aero": {"front": "valore", "rear": "valore"},
-                      "suspension": {"springs": "valore", "height": "valore"},
-                      "drivetrain": {"diff": "valore"}
-                    }`;
+                    const prompt = `Sei un ingegnere di pista per Project Motor Racing. 
+                    Genera un setup professionale per: Auto ${carModel}, Circuito ${track}, Periferica ${device}.
+                    Rispondi solo in JSON: { "overview": "...", "tyres": {"pressione": "...", "camber": "..."}, "aero": {"ala_ant": "...", "ala_post": "..."}, "suspension": {"molle": "...", "altezza": "..."}, "drivetrain": {"diff": "..."} }`;
 
                     const result = await model.generateContent(prompt);
-                    const response = await result.response;
-                    const text = response.text();
-                    
-                    // Pulizia del testo per estrarre solo il JSON
+                    const text = result.response.text();
                     const jsonMatch = text.match(/\{[\s\S]*\}/);
+                    
                     if (jsonMatch) {
                         setSetup(JSON.parse(jsonMatch[0]));
                     } else {
-                        throw new Error("L'IA ha risposto con un formato non valido.");
+                        throw new Error("Formato risposta non valido.");
                     }
                 } catch (err) {
-                    setError(err.message.includes('API_KEY_INVALID') ? "Chiave API non valida." : err.message);
+                    console.error(err);
+                    setError("Errore: Verifica la tua API Key o la connessione.");
                 } finally {
                     setLoading(false);
                 }
             };
 
             return (
-                <div className="min-h-screen pb-20">
+                <div className="min-h-screen">
                     {/* Header */}
-                    <header className="border-b border-white/10 bg-racing-dark/90 backdrop-blur-md sticky top-0 z-50">
-                        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-racing-red flex items-center justify-center skew-x-[-12deg]">
-                                    <span className="text-white font-display text-2xl font-bold skew-x-[12deg]">P</span>
-                                </div>
-                                <h1 className="font-display text-3xl tracking-wider uppercase italic">
-                                    PMR <span className="text-racing-red">Engineer</span>
-                                </h1>
+                    <nav className="border-b border-white/10 bg-black/50 backdrop-blur-lg p-4 sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-racing-red w-8 h-8 flex items-center justify-center font-display font-bold text-xl skew-x-[-10deg]">P</div>
+                                <span className="font-display text-2xl tracking-tighter italic uppercase">PMR <span className="text-racing-red">Engineer</span></span>
                             </div>
-                            <button 
-                                onClick={() => setShowSettings(true)}
-                                className="p-2 hover:bg-white/5 rounded-full transition-colors"
-                                title="Impostazioni API"
-                            >
-                                ⚙️
-                            </button>
+                            <button onClick={() => setShowSettings(true)} className="text-xl opacity-50 hover:opacity-100 transition-opacity">⚙️</button>
                         </div>
-                    </header>
+                    </nav>
 
                     {/* Settings Modal */}
                     {showSettings && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-                            <div className="bg-racing-carbon p-8 rounded-2xl border border-white/10 max-w-md w-full">
-                                <h3 className="font-display text-2xl uppercase mb-4">Configurazione API</h3>
-                                <p className="text-gray-400 text-sm mb-6">Inserisci la tua Gemini API Key per attivare l'ingegnere IA. La chiave viene salvata solo localmente.</p>
-                                <form onSubmit={saveKey} className="space-y-4">
-                                    <input 
-                                        name="key" 
-                                        type="password" 
-                                        defaultValue={apiKey}
-                                        placeholder="Inserisci API Key..." 
-                                        className="w-full bg-black border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red"
-                                        required
-                                    />
-                                    <div className="flex gap-3">
-                                        <button type="submit" className="flex-1 bg-racing-red py-3 rounded-lg font-display text-xl uppercase italic">Salva</button>
-                                        {apiKey && <button type="button" onClick={() => setShowSettings(false)} className="px-6 border border-white/10 rounded-lg">Chiudi</button>}
-                                    </div>
-                                </form>
-                                <p className="mt-4 text-[10px] text-gray-600 uppercase text-center tracking-widest">Ottieni una chiave gratuita su ai.google.dev</p>
+                        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4">
+                            <div className="bg-racing-carbon p-8 rounded-2xl border border-white/10 max-w-md w-full shadow-2xl">
+                                <h2 className="font-display text-3xl uppercase mb-2 italic">Configurazione</h2>
+                                <p className="text-gray-500 text-sm mb-6 uppercase tracking-widest">Inserisci la tua Gemini API Key</p>
+                                <input 
+                                    type="password" 
+                                    placeholder="Incolla chiave qui..." 
+                                    className="w-full bg-black border border-white/10 p-4 rounded-xl mb-4 outline-none focus:border-racing-red"
+                                    value={apiKey}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setApiKey(val);
+                                        localStorage.setItem('pmr_key', val);
+                                    }}
+                                />
+                                <button 
+                                    onClick={() => apiKey && setShowSettings(false)}
+                                    className="w-full bg-racing-red p-4 rounded-xl font-display text-xl uppercase italic tracking-widest"
+                                >
+                                    Attiva Sistema
+                                </button>
+                                <a href="https://aistudio.google.com/app/apikey" target="_blank" className="block text-center mt-4 text-[10px] text-gray-600 hover:text-gray-400 uppercase tracking-widest">Ottieni chiave gratuita qui</a>
                             </div>
                         </div>
                     )}
 
-                    <main className="max-w-7xl mx-auto px-6 mt-12 grid grid-cols-1 lg:grid-cols-12 gap-12">
+                    <div className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 lg:grid-cols-12 gap-12">
                         {/* Form */}
                         <div className="lg:col-span-4">
-                            <form onSubmit={generateSetup} className="racing-card p-8 rounded-2xl shadow-2xl sticky top-28">
-                                <h2 className="font-display text-2xl uppercase mb-6 text-racing-red italic">Analisi Sessione</h2>
-                                
-                                <div className="space-y-5">
+                            <form onSubmit={handleGenerate} className="racing-card p-8 rounded-2xl sticky top-24">
+                                <div className="space-y-6">
+                                    <h3 className="font-display text-2xl uppercase italic text-racing-red">Parametri Sessione</h3>
                                     <div>
-                                        <label className="block text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-2">Modello Auto</label>
-                                        <input 
-                                            value={carModel}
-                                            onChange={(e) => setCarModel(e.target.value)}
-                                            placeholder="es. Porsche 911 GT3 R" 
-                                            className="w-full bg-black border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red transition-all"
-                                            required
-                                        />
+                                        <label className="text-[10px] uppercase text-gray-500 tracking-widest block mb-2">Auto</label>
+                                        <input required value={carModel} onChange={e => setCarModel(e.target.value)} className="w-full bg-black/50 border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red" placeholder="es. Ferrari 296 GT3" />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-2">Circuito</label>
-                                        <input 
-                                            value={track}
-                                            onChange={(e) => setTrack(e.target.value)}
-                                            placeholder="es. Spa Francorchamps" 
-                                            className="w-full bg-black border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red transition-all"
-                                            required
-                                        />
+                                        <label className="text-[10px] uppercase text-gray-500 tracking-widest block mb-2">Circuito</label>
+                                        <input required value={track} onChange={e => setTrack(e.target.value)} className="w-full bg-black/50 border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red" placeholder="es. Imola" />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-2">Periferica</label>
-                                        <select 
-                                            value={device}
-                                            onChange={(e) => setDevice(e.target.value)}
-                                            className="w-full bg-black border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red"
-                                        >
+                                        <label className="text-[10px] uppercase text-gray-500 tracking-widest block mb-2">Periferica</label>
+                                        <select value={device} onChange={e => setDevice(e.target.value)} className="w-full bg-black/50 border border-white/10 p-3 rounded-lg outline-none focus:border-racing-red">
                                             <option>Volante (Direct Drive)</option>
-                                            <option>Volante (Cinghia/Ingranaggi)</option>
-                                            <option>Controller (Gamepad)</option>
+                                            <option>Volante (Standard)</option>
+                                            <option>Gamepad</option>
                                         </select>
                                     </div>
-                                    
-                                    <button 
-                                        disabled={loading}
-                                        className="w-full bg-racing-red hover:bg-red-600 text-white font-display text-2xl py-4 rounded-lg uppercase italic tracking-widest transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-                                    >
-                                        {loading ? (
-                                            <span className="flex items-center justify-center gap-3">
-                                                <span className="w-2 h-2 bg-white rounded-full animate-bounce"></span>
-                                                Calcolo Telemetria...
-                                            </span>
-                                        ) : 'Genera Setup Pro'}
+                                    <button disabled={loading} className="w-full bg-racing-red p-4 rounded-xl font-display text-2xl uppercase italic tracking-tighter hover:scale-[1.02] transition-transform disabled:opacity-50">
+                                        {loading ? "Analisi in corso..." : "Genera Setup"}
                                     </button>
                                 </div>
                             </form>
                         </div>
 
-                        {/* Results */}
+                        {/* Risultati */}
                         <div className="lg:col-span-8">
-                            {error && (
-                                <div className="bg-red-900/20 border border-red-500/50 p-6 rounded-xl text-red-200 mb-8 animate-pulse-red">
-                                    <h4 className="font-bold uppercase text-sm mb-1">Errore di Sistema</h4>
-                                    <p className="text-sm">{error}</p>
-                                </div>
-                            )}
-
+                            {error && <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-xl text-red-500 text-sm mb-6">{error}</div>}
+                            
                             {setup ? (
-                                <div className="space-y-8 animate-in fade-in duration-1000">
+                                <div className="space-y-8 animate-in fade-in duration-700">
                                     <div className="border-l-4 border-racing-red pl-6">
-                                        <h3 className="font-display text-6xl uppercase italic leading-none">{track}</h3>
-                                        <p className="text-racing-red font-display text-2xl uppercase tracking-widest mt-2">{carModel}</p>
+                                        <h2 className="font-display text-6xl uppercase italic leading-none">{track}</h2>
+                                        <p className="text-racing-red font-display text-2xl uppercase italic">{carModel}</p>
                                     </div>
-
-                                    <div className="bg-white/5 p-6 rounded-xl border border-white/5 italic text-gray-300">
+                                    <div className="bg-white/5 p-6 rounded-xl italic text-gray-400 border border-white/5">
                                         "{setup.overview}"
                                     </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <DataCard title="Pneumatici & Pressioni" data={setup.tyres} accent="red" />
-                                        <DataCard title="Aerodinamica" data={setup.aero} accent="accent" />
-                                        <DataCard title="Sospensioni" data={setup.suspension} accent="silver" />
-                                        <DataCard title="Trasmissione" data={setup.drivetrain} accent="red" />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <Card title="Gomme" data={setup.tyres} />
+                                        <Card title="Aero" data={setup.aero} />
+                                        <Card title="Sospensioni" data={setup.suspension} />
+                                        <Card title="Drivetrain" data={setup.drivetrain} />
                                     </div>
                                 </div>
-                            ) : !loading && (
-                                <div className="h-full min-h-[500px] border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center text-center px-10">
-                                    <div className="w-24 h-24 rounded-full border-4 border-white/5 flex items-center justify-center mb-6 opacity-20">
-                                        <span className="text-4xl">🏎️</span>
-                                    </div>
-                                    <h3 className="font-display text-3xl uppercase tracking-[0.2em] text-gray-700">In attesa di input</h3>
-                                    <p className="text-gray-800 text-sm max-w-xs mt-2 uppercase tracking-widest">Inserisci i dati dell'auto e del circuito per ricevere l'analisi dell'ingegnere.</p>
+                            ) : (
+                                <div className="h-[400px] border border-white/5 rounded-3xl flex flex-col items-center justify-center text-gray-800">
+                                    <span className="text-6xl mb-4 opacity-20">🏁</span>
+                                    <p className="font-display text-2xl uppercase tracking-[0.3em]">Ready to Race</p>
                                 </div>
                             )}
                         </div>
-                    </main>
-                </div>
-            );
-        };
-
-        const DataCard = ({ title, data, accent }) => {
-            const accentClass = accent === 'red' ? 'text-racing-red' : accent === 'accent' ? 'text-racing-accent' : 'text-gray-400';
-            return (
-                <div className="racing-card p-6 rounded-xl">
-                    <h4 className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-4 border-b border-white/5 pb-2">{title}</h4>
-                    <div className="space-y-3">
-                        {Object.entries(data).map(([key, value]) => (
-                            <div key={key} className="flex justify-between items-center">
-                                <span className="text-xs uppercase text-gray-400">{key.replace('_', ' ')}</span>
-                                <span className={`font-mono font-bold ${accentClass}`}>{value}</span>
-                            </div>
-                        ))}
                     </div>
                 </div>
             );
         };
 
+        const Card = ({ title, data }) => (
+            <div className="racing-card p-6 rounded-xl">
+                <h4 className="text-[10px] uppercase tracking-widest text-gray-500 mb-4 border-b border-white/5 pb-2">{title}</h4>
+                <div className="space-y-2">
+                    {Object.entries(data).map(([k, v]) => (
+                        <div key={k} className="flex justify-between text-sm">
+                            <span className="text-gray-500 uppercase text-[10px]">{k.replace('_', ' ')}</span>
+                            <span className="font-mono text-racing-accent font-bold">{v}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        // Rendering finale
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
